@@ -1,0 +1,13 @@
+{
+    "name": "EventWebhook",
+    "version": "1.0.0",
+    "description": "eventwebhook.module_desc",
+    "authors": [
+        "Flames",
+        "Woeler"
+    ],
+    "providers": [
+        "Flute\\Modules\\EventWebhook\\src\\ServiceProviders\\EventWebhookServiceProvider"
+    ],
+    "dependencies": {}
+}
