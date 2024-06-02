@@ -75,7 +75,6 @@ class DiscordWebhook
             } else {
                 $sent = true;
                 if ($code < 200 || $code >= 400) {
-                    dd($response);
                     $response = json_decode($response, true, 512, JSON_THROW_ON_ERROR);
                     throw new DiscordInvalidResponseException('Discord Webhook returned invalid response: ' . $code . '.', $code, null, $response);
                 }

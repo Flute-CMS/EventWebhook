@@ -14,37 +14,46 @@ class WebhookEventListener
         $events = rep(EventWebhook::class)->findAll();
 
         foreach ($events as $event) {
-            events()->addDeferredListener($event->event, function ($eventInstance) use ($event) {
-                $webhookMessage = $this->createWebhookMessage($event, $eventInstance);
-                $this->sendWebhook($event->webhook_url, $webhookMessage);
-            });
+            events()->addDeferredListener($event->event, [$this, 'handleEvent']);
         }
     }
 
-    private function createWebhookMessage(EventWebhook $eventWebhook, $eventInstance): DiscordEmbedMessage
+    public static function handleEvent($eventInstance)
+    {
+        if ($eventInstance::NAME) {
+            $events = rep(EventWebhook::class)->select()->where('event', $eventInstance::NAME)->fetchAll();
+
+            foreach ($events as $event) {
+                $webhookMessage = self::createWebhookMessage($event, $eventInstance);
+                self::sendWebhook($event->webhook_url, $webhookMessage);
+            }
+        }
+    }
+
+    private static function createWebhookMessage(EventWebhook $eventWebhook, $eventInstance): DiscordEmbedMessage
     {
         $message = new DiscordEmbedMessage();
         $message->setUsername($eventWebhook->webhook_name)
-            ->setContent($this->replaceContent($eventWebhook->content, $eventInstance))
+            ->setContent(self::replaceContent($eventWebhook->content, $eventInstance))
             ->setAvatar($eventWebhook->webhook_avatar);
 
         $embedsData = Json::decode($eventWebhook->embeds, Json::FORCE_ARRAY);
 
         foreach ($embedsData as $embedData) {
             $embed = new DiscordEmbedMessage();
-            $embed->setTitle($this->replaceContent($embedData['body']['title'] ?? '', $eventInstance))
-                ->setDescription($this->replaceContent($embedData['body']['description'] ?? '', $eventInstance))
+            $embed->setTitle(self::replaceContent($embedData['body']['title'] ?? '', $eventInstance))
+                ->setDescription(self::replaceContent($embedData['body']['description'] ?? '', $eventInstance))
                 ->setUrl($embedData['body']['url'] ?? '')
                 ->setColorWithHexValue($embedData['body']['color'] ?? 'ffffff');
 
             if (isset($embedData['author'])) {
-                $embed->setAuthorName($this->replaceContent($embedData['author']['name'] ?? '', $eventInstance))
+                $embed->setAuthorName(self::replaceContent($embedData['author']['name'] ?? '', $eventInstance))
                     ->setAuthorUrl($embedData['author']['url'] ?? '')
                     ->setAuthorIcon($embedData['author']['icon'] ?? '');
             }
 
             if (isset($embedData['footer'])) {
-                $embed->setFooterText($this->replaceContent($embedData['footer']['text'] ?? '', $eventInstance))
+                $embed->setFooterText(self::replaceContent($embedData['footer']['text'] ?? '', $eventInstance))
                     ->setFooterIcon($embedData['footer']['icon'] ?? '');
 
                 if (isset($embedData['footer']['time'])) {
@@ -63,8 +72,8 @@ class WebhookEventListener
             if (isset($embedData['fields']) && is_array($embedData['fields'])) {
                 foreach ($embedData['fields'] as $field) {
                     $embed->addField(
-                        $this->replaceContent($field['name'] ?? '', $eventInstance),
-                        $this->replaceContent($field['value'] ?? '', $eventInstance),
+                        self::replaceContent($field['name'] ?? '', $eventInstance),
+                        self::replaceContent($field['value'] ?? '', $eventInstance),
                         $field['inline'] ?? false
                     );
                 }
@@ -76,27 +85,89 @@ class WebhookEventListener
         return $message;
     }
 
-    private function replaceContent(string $content, $eventInstance): string
+    private static function replaceContent(string $content, $eventInstance): string
     {
+        $content = self::replaceUserContent($content);
+
         return preg_replace_callback('/\{(.*?)\}/', function ($matches) use ($eventInstance) {
-            $parts = explode('.', $matches[1]);
-            if (count($parts) == 2 && method_exists($eventInstance, $parts[0])) {
-                return $eventInstance->{$parts[0]}()->{$parts[1]};
-            } elseif (count($parts) == 1 && method_exists($eventInstance, $parts[0])) {
-                return $eventInstance->{$parts[0]}();
-            } elseif (property_exists($eventInstance, $matches[1])) {
-                return $eventInstance->{$matches[1]};
-            } else {
-                return $matches[0];
-            }
+            return self::evaluateExpression($matches[1], $eventInstance);
         }, $content);
     }
 
-    private function sendWebhook(string $webhookUrl, DiscordEmbedMessage $message)
+    private static function evaluateExpression($expression, $eventInstance)
+    {
+        if (preg_match('/^(\w+)\((.*?)\)$/', $expression, $matches)) {
+            $func = $matches[1];
+            $args = self::parseArguments($matches[2]);
+            if (function_exists($func)) {
+                $result = call_user_func_array($func, $args);
+                return is_object($result) ? self::getNestedProperty($result, array_slice(explode('.', $expression), 1)) : $result;
+            }
+        }
+
+        $parts = explode('.', $expression);
+        return self::getNestedProperty($eventInstance, $parts);
+    }
+
+    private static function getNestedProperty($object, array $parts)
+    {
+        $current = $object;
+
+        foreach ($parts as $part) {
+            if (preg_match('/(\w+)\((.*?)\)$/', $part, $matches)) {
+                $func = $matches[1];
+                $args = self::parseArguments($matches[2]);
+                if (is_object($current) && method_exists($current, $func)) {
+                    $current = call_user_func_array([$current, $func], $args);
+                } elseif (function_exists($func)) {
+                    $current = call_user_func_array($func, $args);
+                } else {
+                    return '{' . implode('.', $parts) . '}';
+                }
+            } elseif (is_object($current)) {
+                if (method_exists($current, $part)) {
+                    $current = $current->{$part}();
+                } elseif (property_exists($current, $part)) {
+                    $current = $current->{$part};
+                } else {
+                    return '{' . implode('.', $parts) . '}';
+                }
+            } else {
+                return '{' . implode('.', $parts) . '}';
+            }
+        }
+
+        return $current;
+    }
+
+    private static function parseArguments($argsString)
+    {
+        $args = [];
+        if (!empty($argsString)) {
+            $parts = explode(',', $argsString);
+            foreach ($parts as $part) {
+                $part = trim($part, " \t\n\r\0\x0B'\"");
+                $args[] = $part;
+            }
+        }
+        return $args;
+    }
+
+    private static function replaceUserContent(string $content)
+    {
+        return str_replace(['{name}', '{login}', '{email}', '{balance}'], [
+            user()->getCurrentUser()->name,
+            user()->getCurrentUser()->login,
+            user()->getCurrentUser()->email,
+            user()->getCurrentUser()->balance
+        ], $content);
+    }
+
+    private static function sendWebhook(string $webhookUrl, DiscordEmbedMessage $message)
     {
         try {
-        $discordWebhook = new DiscordWebhook($webhookUrl);
-        $discordWebhook->send($message);
+            $discordWebhook = new DiscordWebhook($webhookUrl);
+            $discordWebhook->send($message);
         } catch (\Exception $e) {
             logs()->error($e);
         }

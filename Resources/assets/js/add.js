@@ -134,16 +134,16 @@ $(() => {
         }
     });
 
-    $(document).on('input', '.resizable', function (e) {
-        while (
-            $(this).outerHeight() <
-            this.scrollHeight +
-                parseFloat($(this).css('borderTopWidth')) +
-                parseFloat($(this).css('borderBottomWidth'))
-        ) {
-            $(this).height($(this).height() + 1);
-        }
-    });
+    // $(document).on('input', '.resizable', function (e) {
+    //     while (
+    //         $(this).outerHeight() <
+    //         this.scrollHeight +
+    //             parseFloat($(this).css('borderTopWidth')) +
+    //             parseFloat($(this).css('borderBottomWidth'))
+    //     ) {
+    //         $(this).height($(this).height() + 1);
+    //     }
+    // });
 
     function getEmbedDataByContainerId(containerId) {
         let embedData = embedDataArray.find(
