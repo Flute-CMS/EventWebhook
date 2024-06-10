@@ -22,37 +22,37 @@ class DiscordEmbedMessage extends AbstractDiscordMessage
 
     public function jsonSerialize(): array
     {
-        return [
+        return array_filter([
             'username' => $this->username,
             'content' => $this->content,
             'avatar_url' => $this->avatar,
             'tts' => $this->tts,
             'embeds' => array_map(function ($embed) {
-                return [
+                return array_filter([
                     'title' => $embed->getTitle(),
                     'description' => $embed->getDescription(),
                     'timestamp' => $embed->getTimestamp() ? $embed->getTimestamp()->format('Y-m-d\TH:i:sP') : null,
                     'url' => $embed->getUrl(),
                     'color' => $embed->getColor(),
-                    'author' => [
+                    'author' => array_filter([
                         'name' => $embed->getAuthorName(),
                         'url' => $embed->getAuthorUrl(),
                         'icon_url' => $embed->getAuthorIcon(),
-                    ],
-                    'image' => [
+                    ]),
+                    'image' => array_filter([
                         'url' => $embed->getImage(),
-                    ],
-                    'thumbnail' => [
+                    ]),
+                    'thumbnail' => array_filter([
                         'url' => $embed->getThumbnail(),
-                    ],
+                    ]),
                     'fields' => $embed->getFields(),
-                    'footer' => [
+                    'footer' => array_filter([
                         'text' => $embed->getFooterText(),
                         'icon_url' => $embed->getFooterIcon(),
-                    ],
-                ];
+                    ]),
+                ]);
             }, $this->embeds),
-        ];
+        ]);
     }
 
     public function addEmbed(self $embed): self
